@@ -1,0 +1,105 @@
+workflows:
+  ios-native-build:
+    name: iOS Native App Build (Manual Signing)
+    max_build_duration: 60
+    instance_type: mac_mini_m1
+    environment:
+      xcode: latest
+      vars:
+        XCODE_PROJECT: "ios_app/GlycoGuide.xcodeproj"
+        XCODE_SCHEME: "GlycoGuide"
+        BUNDLE_ID: "com.glycoguide.app"
+        TEAM_ID: "9XVR3WAB6Y"
+      groups:
+        - ios_credentials
+    scripts:
+      - name: Install Apple certificate
+        script: |
+          #!/bin/bash
+          set -e
+          
+          KEYCHAIN_PATH="$HOME/Library/Keychains/build.keychain-db"
+          KEYCHAIN_PASSWORD="codemagic"
+          
+          # Remove existing keychain if present
+          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+          
+          # Create new keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          
+          # Decode certificate - handle potential whitespace in base64
+          echo "$IOS_DISTRIBUTION_CERTIFICATE" | tr -d '\n\r ' | base64 --decode > /tmp/certificate.p12
+          
+          # Import certificate
+          security import /tmp/certificate.p12 \
+            -P "$IOS_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          
+          # Allow codesign access
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          
+          # Add to keychain search list
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$KEYCHAIN_PATH"
+          
+          echo "Certificate installed successfully"
+
+      - name: Install provisioning profile
+        script: |
+          #!/bin/bash
+          set -e
+          
+          PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES_DIR"
+          
+          # Decode profile - handle potential whitespace in base64
+          echo "$IOS_PROVISIONING_PROFILE" | tr -d '\n\r ' | base64 --decode > "$PROFILES_DIR/GlycoGuide_AppStore.mobileprovision"
+          
+          # Get and display profile UUID
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< $(/usr/bin/security cms -D -i "$PROFILES_DIR/GlycoGuide_AppStore.mobileprovision"))
+          echo "Provisioning profile installed: $PROFILE_UUID"
+          
+          # Copy with UUID name
+          cp "$PROFILES_DIR/GlycoGuide_AppStore.mobileprovision" "$PROFILES_DIR/$PROFILE_UUID.mobileprovision"
+
+      - name: Build iOS App
+        script: |
+          #!/bin/bash
+          set -e
+          
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -archivePath ios_app/build/GlycoGuide.xcarchive \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="GlycoGuide_AppStore" \
+            archive
+
+      - name: Export IPA
+        script: |
+          xcodebuild -exportArchive \
+            -archivePath ios_app/build/GlycoGuide.xcarchive \
+            -exportPath ios_app/build \
+            -exportOptionsPlist ios_app/ExportOptions.plist
+
+    artifacts:
+      - ios_app/build/*.ipa
+      - ios_app/build/*.xcarchive
+      - ios_app/build/*.log
+
+    publishing:
+      email:
+        recipients:
+          - support@glycoguide.app
+        notify:
+          success: true
+          failure: true
