@@ -10,6 +10,8 @@ workflows:
         XCODE_SCHEME: "GlycoGuide"
         BUNDLE_ID: "com.glycoguide.app"
         TEAM_ID: "9XVR3WAB6Y"
+      groups:
+        - iOS_credentials
     scripts:
       - name: Install Apple certificate
         script: |
