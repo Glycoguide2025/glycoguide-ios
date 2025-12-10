@@ -29,8 +29,19 @@ workflows:
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           
-          # Decode certificate - handle potential whitespace in base64
-          echo "$IOS_DISTRIBUTION_CERTIFICATE" | tr -d '\n\r ' | base64 --decode > /tmp/certificate.p12
+          # Debug: Show first 50 chars of certificate data
+          echo "Certificate data length: ${#IOS_DISTRIBUTION_CERTIFICATE}"
+          echo "First 50 chars: ${IOS_DISTRIBUTION_CERTIFICATE:0:50}"
+          
+          # Clean and decode certificate - remove ALL whitespace and use macOS base64
+          CLEAN_CERT=$(echo "$IOS_DISTRIBUTION_CERTIFICATE" | tr -d '\n\r\t ' )
+          echo "Cleaned cert length: ${#CLEAN_CERT}"
+          
+          # Use printf instead of echo to avoid issues, and -D for macOS
+          printf '%s' "$CLEAN_CERT" | base64 -D > /tmp/certificate.p12
+          
+          # Check file size
+          echo "Certificate file size: $(wc -c < /tmp/certificate.p12) bytes"
           
           # Import certificate
           security import /tmp/certificate.p12 \
