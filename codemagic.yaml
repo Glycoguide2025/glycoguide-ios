@@ -107,10 +107,44 @@ workflows:
 
       - name: Export IPA
         script: |
+          #!/bin/bash
+          set -e
+          
+          # Create ExportOptions.plist with correct profile UUID
+          cat > /tmp/ExportOptions.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store-connect</string>
+              <key>teamID</key>
+              <string>$TEAM_ID</string>
+              <key>uploadBitcode</key>
+              <false/>
+              <key>uploadSymbols</key>
+              <true/>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>signingCertificate</key>
+              <string>Apple Distribution</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>$BUNDLE_ID</key>
+                  <string>$PROFILE_UUID</string>
+              </dict>
+              <key>destination</key>
+              <string>export</string>
+          </dict>
+          </plist>
+          EOF
+          
+          echo "ExportOptions.plist created with profile UUID: $PROFILE_UUID"
+          
           xcodebuild -exportArchive \
             -archivePath ios_app/build/GlycoGuide.xcarchive \
             -exportPath ios_app/build \
-            -exportOptionsPlist ios_app/ExportOptions.plist
+            -exportOptionsPlist /tmp/ExportOptions.plist
 
     artifacts:
       - ios_app/build/*.ipa
